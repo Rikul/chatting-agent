@@ -143,9 +143,9 @@ def render_messages(conversation: Optional[ConversationState]) -> None:
         return
 
     for message in conversation.messages:
-        with st.chat_message(message.role):
+        with st.chat_message(message.get_streamlit_role(), avatar=message.get_avatar()):
             timestamp = message.timestamp.strftime("%H:%M:%S")
-            st.markdown(f"**{message.role}** ({timestamp})")
+            st.markdown(f"**{message.agent_name}** ({timestamp})")
             st.markdown(message.content)
 
 
@@ -176,8 +176,12 @@ def handle_conversation_loop(conversation: ConversationState) -> None:
     agent_name, agent_model = conversation.get_next_agent_info()
     logging.info("Next agent to respond: %s, Model: %s", agent_name, agent_model)
 
+    # Determine Streamlit role and avatar for the agent
+    streamlit_role = "user" if agent_name == "Agent 1" else "assistant"
+    avatar = "🤖" if agent_name == "Agent 1" else "🦾"
+
     # Display the agent's response in real-time
-    with st.chat_message(agent_name):
+    with st.chat_message(streamlit_role, avatar=avatar):
         message_placeholder = st.empty()
         timestamp_placeholder = st.empty()
 

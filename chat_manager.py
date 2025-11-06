@@ -7,14 +7,27 @@ from typing import List, Dict, Optional, Tuple
 @dataclass
 class Message:
     """Represents a single message in the conversation."""
-    role: str
+    agent_name: str  # "Agent 1" or "Agent 2" for display
     content: str
     timestamp: datetime
+
+    def get_streamlit_role(self) -> str:
+        """
+        Get the Streamlit-compatible role for st.chat_message().
+
+        Streamlit only accepts 'user' or 'assistant' as valid roles.
+        Agent 1 -> 'user', Agent 2 -> 'assistant'
+        """
+        return "user" if self.agent_name == "Agent 1" else "assistant"
+
+    def get_avatar(self) -> str:
+        """Get an emoji avatar for the agent."""
+        return "🤖" if self.agent_name == "Agent 1" else "🦾"
 
     def to_dict(self) -> Dict[str, str]:
         """Convert message to dictionary format."""
         return {
-            "role": self.role,
+            "agent_name": self.agent_name,
             "content": self.content,
             "timestamp": self.timestamp.strftime("%H:%M:%S")
         }
@@ -41,7 +54,7 @@ class ConversationState:
         self.current_agent = 1
         self.messages = [
             Message(
-                role="Agent 1",
+                agent_name="Agent 1",
                 content=self.topic,
                 timestamp=datetime.now()
             )
@@ -56,7 +69,7 @@ class ConversationState:
         """Add a message from the current agent."""
         agent_name = f"Agent {self.current_agent}"
         message = Message(
-            role=agent_name,
+            agent_name=agent_name,
             content=content,
             timestamp=datetime.now()
         )
@@ -148,10 +161,10 @@ class ConversationState:
 """
         for message in self.messages:
             timestamp = message.timestamp.strftime("%H:%M:%S")
-            markdown += f"**{message.role}** ({timestamp})\n{message.content}\n\n"
+            markdown += f"**{message.agent_name}** ({timestamp})\n{message.content}\n\n"
 
         return markdown
 
     def get_messages_for_model(self) -> List[Dict[str, str]]:
         """Get messages in the format expected by the model."""
-        return [{"role": m.role, "content": m.content} for m in self.messages]
+        return [{"role": m.agent_name, "content": m.content} for m in self.messages]
