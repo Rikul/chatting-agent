@@ -1,197 +1,329 @@
+"""Auto-pilot Chatting Agents - A Streamlit app for AI agent conversations."""
 import streamlit as st
-import requests
-import json
 from datetime import datetime
 import logging
+from typing import Optional
+
+from config import configure_logging, DEFAULT_TURN_LIMIT_MINUTES
+from ollama_client import get_models, generate_response, OllamaClientError
+from chat_manager import ConversationState
+
 
 # Configure logging
-logging.basicConfig(filename='app.log', level=logging.INFO, 
-                    format='%(asctime)s - %(levelname)s - %(message)s')
+configure_logging()
 
-SYSTEM_PROMPT = "Chat like friends about any topic. Keep it casual, light, sometimes funny. Stay safe and respectful."
-OLLAMA_HOST = 'http://localhost:11434'
 
-def get_models():
-    try:
-        logging.info("Attempting to connect to Ollama...")
-        response = requests.get(f"{OLLAMA_HOST}/api/tags")
-        response.raise_for_status()
-        models = [m['name'] for m in response.json()["models"]]
-        logging.info("Successfully connected to Ollama.")
-        return models
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Failed to connect to Ollama: {e}", exc_info=True)
-        st.error("Ollama is not running or not reachable. Please check the logs in app.log for more details.")
-        st.stop()
+def initialize_session_state(models: list[str]) -> None:
+    """Initialize Streamlit session state with default values."""
+    if 'conversation' not in st.session_state:
+        # Set default models
+        agent1_default = models[0] if models else ""
+        agent2_default = models[1] if len(models) > 1 else agent1_default
 
-def generate_response(model, messages):
-    # Create a clean version of the messages for the model
-    model_messages = []
-    for i, msg in enumerate(messages):
-        role = "user" if i == len(messages) - 1 else "assistant"
-        model_messages.append({"role": role, "content": msg["content"]})
+        st.session_state.conversation = None
+        st.session_state.agent1_model = agent1_default
+        st.session_state.agent2_model = agent2_default
 
-    logging.info(f"Prompt sent to {model}: {model_messages}")
-    
-    payload = {
-        "model": model,
-        "messages": model_messages,
-        "stream": True,
-        "system": SYSTEM_PROMPT,
-    }
-    try:
-        with requests.post(f"{OLLAMA_HOST}/api/chat", json=payload, stream=True) as response:
-            response.raise_for_status()
-            for line in response.iter_lines():
-                if line:
-                    try:
-                        json_line = json.loads(line)
-                        if "message" in json_line and "content" in json_line["message"]:
-                            yield json_line["message"]["content"]
-                    except json.JSONDecodeError:
-                        logging.warning(f"Received non-JSON line from stream: {line}")
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Error during API call to {model}: {e}", exc_info=True)
-        st.error(f"An error occurred while communicating with the model: {e}")
-        st.session_state.running = False
-        st.rerun()
 
-def main():
-    st.title("Auto-pilot Chatting Agents")
-    st.info("Select two models, enter a topic, and click 'Start' to begin the conversation.")
+def validate_inputs(agent1: str, agent2: str, topic: str) -> Optional[str]:
+    """
+    Validate user inputs.
 
-    models = get_models()
+    Returns:
+        Error message if validation fails, None otherwise.
+    """
+    if not topic or not topic.strip():
+        return "Please enter a topic for the agents to discuss."
 
-    # Initialize session state for agent models if not already present
-    if 'agent1_model' not in st.session_state:
-        st.session_state.agent1_model = models[0]
-    if 'agent2_model' not in st.session_state:
-        st.session_state.agent2_model = models[1] if len(models) > 1 else models[0]
+    if agent1 == agent2:
+        return "Please select different models for Agent 1 and Agent 2 to make the conversation more interesting."
 
+    return None
+
+
+def render_conversation_controls(
+    models: list[str],
+    is_running: bool,
+    has_conversation: bool
+) -> tuple[str, str, str, int]:
+    """
+    Render the conversation control UI elements.
+
+    Returns:
+        Tuple of (agent1_model, agent2_model, topic, turn_limit)
+    """
     col1, col2 = st.columns(2)
     with col1:
         agent1_selection = st.selectbox(
-            "Select Agent 1",
+            "Select Agent 1 Model",
             models,
-            index=models.index(st.session_state.agent1_model)
+            index=models.index(st.session_state.agent1_model) if st.session_state.agent1_model in models else 0,
+            disabled=is_running,
+            key="agent1_selectbox"
         )
-        if agent1_selection != st.session_state.agent1_model:
-            st.session_state.agent1_model = agent1_selection
-            st.rerun()
 
     with col2:
         agent2_selection = st.selectbox(
-            "Select Agent 2",
+            "Select Agent 2 Model",
             models,
-            index=models.index(st.session_state.agent2_model)
+            index=models.index(st.session_state.agent2_model) if st.session_state.agent2_model in models else 0,
+            disabled=is_running,
+            key="agent2_selectbox"
         )
-        if agent2_selection != st.session_state.agent2_model:
-            st.session_state.agent2_model = agent2_selection
-            st.rerun()
 
-    topic = st.text_input("Enter a topic for the agents to discuss", "")
-    turn_limit = st.number_input("Turn limit (minutes, 0 for unlimited)", min_value=0, value=10)
+    topic = st.text_input(
+        "Enter a topic for the agents to discuss",
+        disabled=is_running,
+        placeholder="e.g., The benefits of artificial intelligence",
+        key="topic_input"
+    )
 
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
+    turn_limit = st.number_input(
+        "Time limit in minutes (0 for unlimited)",
+        min_value=0,
+        value=DEFAULT_TURN_LIMIT_MINUTES,
+        disabled=is_running,
+        help="Set how long the conversation should run. Set to 0 for unlimited time.",
+        key="turn_limit_input"
+    )
 
-    if "running" not in st.session_state:
-        st.session_state.running = False
+    return agent1_selection, agent2_selection, topic, turn_limit
 
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(f"**{message['role']}** ({message['timestamp']})")
-            st.markdown(message["content"])
 
-    col1, col2, col3 = st.columns(3)
+def render_action_buttons(
+    conversation: Optional[ConversationState],
+    topic: str,
+    validation_error: Optional[str]
+) -> tuple[bool, bool]:
+    """
+    Render Start and Stop buttons.
+
+    Returns:
+        Tuple of (start_clicked, stop_clicked)
+    """
+    is_running = conversation is not None and conversation.is_running
+    has_messages = conversation is not None and len(conversation.messages) > 0
+
+    col1, col2, col3 = st.columns([1, 1, 2])
+
     with col1:
-        if st.button("Start", disabled=not topic or st.session_state.running):
-            st.session_state.running = True
-            st.session_state.start_time = datetime.now()
-            st.session_state.finish_time = None
-            st.session_state.messages = [{"role": "Agent 1", "content": topic, "timestamp": datetime.now().strftime("%H:%M:%S")}]
-            st.rerun()
+        start_disabled = (
+            not topic or
+            not topic.strip() or
+            is_running or
+            validation_error is not None
+        )
+        start_clicked = st.button(
+            "Start",
+            disabled=start_disabled,
+            type="primary",
+            use_container_width=True
+        )
 
     with col2:
-        if st.button("Stop", disabled=not st.session_state.running):
-            st.session_state.running = False
-            st.session_state.finish_time = datetime.now()
-            st.rerun()
-
-    if st.session_state.running:
-        if turn_limit > 0 and (datetime.now() - st.session_state.start_time).total_seconds() > turn_limit * 60:
-            st.session_state.running = False
-            st.session_state.finish_time = datetime.now()
-            st.warning("Time limit reached. Conversation stopped.")
-            st.rerun()
-
-        # Determine the current agent and model from session state
-        if len(st.session_state.messages) % 2 != 0:
-            current_agent_model = st.session_state.agent2_model
-            current_agent_name = "Agent 2"
-        else:
-            current_agent_model = st.session_state.agent1_model
-            current_agent_name = "Agent 1"
-
-        logging.info(f"Current agent: {current_agent_name}, Model: {current_agent_model}")
-
-        with st.chat_message(current_agent_name):
-            message_placeholder = st.empty()
-            full_response = ""
-            # Check if we should stop before starting the response
-            if not st.session_state.running:
-                st.rerun()
-
-            for chunk in generate_response(current_agent_model, st.session_state.messages):
-                full_response += chunk
-                message_placeholder.markdown(full_response + "▌")
-                # Check if the stop button was pressed during generation
-                if not st.session_state.running:
-                    break
-            
-            message_placeholder.markdown(full_response)
-        
-        # Only add the message if the run was not stopped mid-generation
-        if st.session_state.running:
-            # Validate the response
-            if not full_response or not full_response.strip():
-                st.error(f"{current_agent_name} ({current_agent_model}) failed to generate a response. The conversation has been stopped.")
-                logging.warning(f"Model {current_agent_model} returned an empty response.")
-                st.session_state.running = False
-                st.rerun()
-            else:
-                st.session_state.messages.append({"role": current_agent_name, "content": full_response, "timestamp": datetime.now().strftime("%H:%M:%S")})
-                st.rerun()
+        stop_clicked = st.button(
+            "Stop",
+            disabled=not is_running,
+            use_container_width=True
+        )
 
     with col3:
-        if "start_time" in st.session_state and st.session_state.start_time:
-            start_time_str = st.session_state.start_time.strftime('%Y-%m-%d %H:%M:%S')
-            finish_time_str = st.session_state.finish_time.strftime('%Y-%m-%d %H:%M:%S') if st.session_state.finish_time else "Not finished"
-            
-            chat_export = f"""
-# Chat on Topic: {topic}
+        if conversation and conversation.start_time:
+            elapsed_time = conversation.get_elapsed_time_str()
+            limit_str = f"{conversation.turn_limit_minutes}m" if conversation.turn_limit_minutes > 0 else "∞"
+            st.info(f"⏱️ Elapsed: {elapsed_time} / {limit_str}")
 
-**Start Time:** {start_time_str}
-**Finish Time:** {finish_time_str}
+    return start_clicked, stop_clicked
 
-**Agent 1 Model:** {st.session_state.agent1_model}
-**Agent 2 Model:** {st.session_state.agent2_model}
 
----
+def render_messages(conversation: Optional[ConversationState]) -> None:
+    """Render the conversation messages."""
+    if conversation is None or not conversation.messages:
+        st.info("👋 Select models and enter a topic, then click 'Start' to begin the conversation.")
+        return
 
-"""
-            chat_export += "\n".join([f"**{m['role']}** ({m['timestamp']})\n{m['content']}" for m in st.session_state.messages])
+    for message in conversation.messages:
+        with st.chat_message(message.get_streamlit_role(), avatar=message.get_avatar()):
+            timestamp = message.timestamp.strftime("%H:%M:%S")
+            st.markdown(f"**{message.agent_name}** ({timestamp})")
+            st.markdown(message.content)
 
-            if st.download_button(
-                label="Save chat",
-                data=chat_export,
-                file_name=f"chat_{datetime.now().strftime('%Y%m%d')}.md",
-                mime="text/markdown",
-                disabled=not st.session_state.messages
-            ):
-                pass
 
-    st.chat_input("Chat input is disabled", disabled=True)
+def render_export_button(conversation: Optional[ConversationState]) -> None:
+    """Render the chat export button."""
+    if conversation is None or not conversation.messages:
+        return
+
+    chat_export = conversation.export_to_markdown()
+    st.download_button(
+        label="💾 Save Chat",
+        data=chat_export,
+        file_name=f"chat_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md",
+        mime="text/markdown",
+        use_container_width=True
+    )
+
+
+def handle_conversation_loop(conversation: ConversationState) -> None:
+    """Handle the main conversation loop."""
+    # Check time limit
+    if conversation.is_time_limit_reached():
+        conversation.stop_conversation()
+        st.warning("⏰ Time limit reached. Conversation stopped.")
+        st.rerun()
+
+    # Get the next agent to respond (we switch after getting the response)
+    agent_name, agent_model = conversation.get_next_agent_info()
+    logging.info("Next agent to respond: %s, Model: %s", agent_name, agent_model)
+
+    # Determine Streamlit role and avatar for the agent
+    streamlit_role = "user" if agent_name == "Agent 1" else "assistant"
+    avatar = "🤖" if agent_name == "Agent 1" else "🦾"
+
+    # Display the agent's response in real-time
+    with st.chat_message(streamlit_role, avatar=avatar):
+        message_placeholder = st.empty()
+        timestamp_placeholder = st.empty()
+
+        full_response = ""
+
+        try:
+            # Generate response
+            for chunk in generate_response(agent_model, conversation.get_messages_for_model()):
+                if not conversation.is_running:
+                    logging.info("Conversation stopped during generation")
+                    break
+
+                full_response += chunk
+                message_placeholder.markdown(full_response + "▌")
+
+            # Final display without cursor
+            message_placeholder.markdown(full_response)
+
+            # Validate response
+            if not full_response or not full_response.strip():
+                st.error(
+                    f"❌ {agent_name} ({agent_model}) failed to generate a response. "
+                    "The conversation has been stopped."
+                )
+                logging.warning("Model %s returned an empty response.", agent_model)
+                conversation.stop_conversation()
+                st.rerun()
+                return
+
+            # Only add message if still running
+            if conversation.is_running:
+                # Switch to the agent that just responded
+                conversation.switch_agent()
+                # Add the message
+                conversation.add_message(full_response)
+
+                # Display timestamp
+                timestamp = conversation.messages[-1].timestamp.strftime("%H:%M:%S")
+                timestamp_placeholder.markdown(f"**{agent_name}** ({timestamp})")
+
+                st.rerun()
+
+        except OllamaClientError as e:
+            st.error(f"❌ Error: {e}")
+            conversation.stop_conversation()
+            st.rerun()
+
+
+def main() -> None:
+    """Main application entry point."""
+    st.set_page_config(
+        page_title="Auto-pilot Chatting Agents",
+        page_icon="🤖",
+        layout="wide"
+    )
+
+    st.title("🤖 Auto-pilot Chatting Agents")
+
+    # Fetch available models
+    try:
+        models = get_models()
+    except OllamaClientError as e:
+        st.error(f"❌ {e}")
+        st.info("Make sure Ollama is running: `ollama serve`")
+        st.stop()
+
+    # Check if any models are available
+    if not models or len(models) == 0:
+        st.error("❌ No Ollama models found!")
+        st.info(
+            "You need to pull at least one model to use this application.\n\n"
+            "To pull models, run:\n"
+            "```bash\n"
+            "ollama pull llama2\n"
+            "ollama pull mistral\n"
+            "```\n\n"
+            "Then refresh this page."
+        )
+        st.stop()
+
+    # Initialize session state
+    initialize_session_state(models)
+
+    # Get current conversation
+    conversation = st.session_state.conversation
+
+    # Render controls
+    agent1_model, agent2_model, topic, turn_limit = render_conversation_controls(
+        models,
+        is_running=conversation is not None and conversation.is_running,
+        has_conversation=conversation is not None
+    )
+
+    # Update session state
+    st.session_state.agent1_model = agent1_model
+    st.session_state.agent2_model = agent2_model
+
+    # Validate inputs
+    validation_error = validate_inputs(agent1_model, agent2_model, topic)
+    if validation_error:
+        st.warning(f"⚠️ {validation_error}")
+
+    # Render action buttons
+    start_clicked, stop_clicked = render_action_buttons(conversation, topic, validation_error)
+
+    # Handle button clicks
+    if start_clicked and not validation_error:
+        logging.info("Starting new conversation on topic: %s", topic)
+        st.session_state.conversation = ConversationState(
+            agent1_model=agent1_model,
+            agent2_model=agent2_model,
+            topic=topic,
+            turn_limit_minutes=turn_limit
+        )
+        st.session_state.conversation.start_conversation()
+        st.rerun()
+
+    if stop_clicked and conversation:
+        logging.info("Stopping conversation")
+        conversation.stop_conversation()
+        st.rerun()
+
+    st.divider()
+
+    # Render messages
+    render_messages(conversation)
+
+    # Render export button in sidebar
+    with st.sidebar:
+        st.header("💾 Export")
+        render_export_button(conversation)
+
+        if conversation and conversation.messages:
+            st.divider()
+            st.subheader("📊 Conversation Stats")
+            st.metric("Total Messages", len(conversation.messages))
+            st.metric("Duration", conversation.get_elapsed_time_str())
+
+    # Main conversation loop
+    if conversation and conversation.is_running:
+        handle_conversation_loop(conversation)
+
 
 if __name__ == "__main__":
     main()
