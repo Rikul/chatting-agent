@@ -29,8 +29,11 @@ def get_models() -> List[str]:
         response.raise_for_status()
 
         models_data = response.json()
+
+        # Return empty list if no models are installed (let the UI handle this gracefully)
         if "models" not in models_data or not models_data["models"]:
-            raise OllamaClientError("No models found in Ollama response")
+            logging.warning("Connected to Ollama but no models found")
+            return []
 
         models = [m['name'] for m in models_data["models"]]
         logging.info("Successfully connected to Ollama. Found %d models.", len(models))

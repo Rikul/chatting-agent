@@ -248,6 +248,20 @@ def main() -> None:
         st.info("Make sure Ollama is running: `ollama serve`")
         st.stop()
 
+    # Check if any models are available
+    if not models or len(models) == 0:
+        st.error("❌ No Ollama models found!")
+        st.info(
+            "You need to pull at least one model to use this application.\n\n"
+            "To pull models, run:\n"
+            "```bash\n"
+            "ollama pull llama2\n"
+            "ollama pull mistral\n"
+            "```\n\n"
+            "Then refresh this page."
+        )
+        st.stop()
+
     # Initialize session state
     initialize_session_state(models)
 
