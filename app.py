@@ -147,39 +147,41 @@ def render_action_buttons(
 
 
 def render_messages(conversation: Optional[ConversationState]) -> None:
-    """Render the conversation messages."""
+    """Render the conversation messages with auto-scroll."""
     if conversation is None or not conversation.messages:
         st.info("👋 Select models and enter a topic, then click 'Start' to begin the conversation.")
         return
 
-    # Create a container for messages with auto-scroll
-    messages_container = st.container()
+    # Render all messages
+    for message in conversation.messages:
+        with st.chat_message(message.get_streamlit_role(), avatar=message.get_avatar()):
+            timestamp = message.timestamp.strftime("%H:%M:%S")
+            st.markdown(f"**{message.agent_name}** ({timestamp})")
+            st.markdown(message.content)
     
-    with messages_container:
-        for message in conversation.messages:
-            with st.chat_message(message.get_streamlit_role(), avatar=message.get_avatar()):
-                timestamp = message.timestamp.strftime("%H:%M:%S")
-                st.markdown(f"**{message.agent_name}** ({timestamp})")
-                st.markdown(message.content)
-    
-    # Add a dummy element at the bottom that we can scroll to
-    # This creates an anchor point at the bottom of the messages
+    # Auto-scroll to bottom using a custom component
+    # This ensures the latest message is visible
     if conversation.messages:
-        st.markdown(
-            '<div id="scroll-anchor"></div>',
-            unsafe_allow_html=True
-        )
-        # JavaScript to scroll to bottom
-        st.markdown(
+        st.components.v1.html(
             """
             <script>
-            var element = document.getElementById('scroll-anchor');
-            if (element) {
-                element.scrollIntoView({behavior: 'smooth', block: 'end'});
-            }
+                // Wait for the page to fully load, then scroll to bottom
+                window.addEventListener('load', function() {
+                    window.parent.document.querySelector('section.main').scrollTo({
+                        top: window.parent.document.querySelector('section.main').scrollHeight,
+                        behavior: 'smooth'
+                    });
+                });
+                // Also scroll immediately
+                setTimeout(function() {
+                    window.parent.document.querySelector('section.main').scrollTo({
+                        top: window.parent.document.querySelector('section.main').scrollHeight,
+                        behavior: 'smooth'
+                    });
+                }, 100);
             </script>
             """,
-            unsafe_allow_html=True
+            height=0
         )
 
 
