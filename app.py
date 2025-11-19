@@ -4,7 +4,7 @@ from datetime import datetime
 import logging
 from typing import Optional
 
-from config import configure_logging, DEFAULT_TURN_LIMIT_MINUTES
+from config import configure_logging, DEFAULT_TURN_LIMIT_MINUTES, SYSTEM_PROMPT
 from ollama_client import get_models, generate_response, OllamaClientError
 from chat_manager import ConversationState
 
@@ -23,6 +23,7 @@ def initialize_session_state(models: list[str]) -> None:
         st.session_state.conversation = None
         st.session_state.agent1_model = agent1_default
         st.session_state.agent2_model = agent2_default
+        st.session_state.system_prompt = SYSTEM_PROMPT
 
 
 def validate_inputs(agent1: str, agent2: str, topic: str) -> Optional[str]:
@@ -45,12 +46,12 @@ def render_conversation_controls(
     models: list[str],
     is_running: bool,
     has_conversation: bool
-) -> tuple[str, str, str, int]:
+) -> tuple[str, str, str, int, str]:
     """
     Render the conversation control UI elements.
 
     Returns:
-        Tuple of (agent1_model, agent2_model, topic, turn_limit)
+        Tuple of (agent1_model, agent2_model, topic, turn_limit, system_prompt)
     """
     col1, col2 = st.columns(2)
     with col1:
@@ -78,6 +79,15 @@ def render_conversation_controls(
         key="topic_input"
     )
 
+    system_prompt = st.text_area(
+        "System Prompt (instructions for the agents)",
+        value=st.session_state.system_prompt,
+        disabled=is_running,
+        height=100,
+        help="Customize how the agents should behave in the conversation.",
+        key="system_prompt_input"
+    )
+
     turn_limit = st.number_input(
         "Time limit in minutes (0 for unlimited)",
         min_value=0,
@@ -87,7 +97,7 @@ def render_conversation_controls(
         key="turn_limit_input"
     )
 
-    return agent1_selection, agent2_selection, topic, turn_limit
+    return agent1_selection, agent2_selection, topic, turn_limit, system_prompt
 
 
 def render_action_buttons(
@@ -137,16 +147,42 @@ def render_action_buttons(
 
 
 def render_messages(conversation: Optional[ConversationState]) -> None:
-    """Render the conversation messages."""
+    """Render the conversation messages with auto-scroll."""
     if conversation is None or not conversation.messages:
         st.info("👋 Select models and enter a topic, then click 'Start' to begin the conversation.")
         return
 
+    # Render all messages
     for message in conversation.messages:
         with st.chat_message(message.get_streamlit_role(), avatar=message.get_avatar()):
             timestamp = message.timestamp.strftime("%H:%M:%S")
             st.markdown(f"**{message.agent_name}** ({timestamp})")
             st.markdown(message.content)
+    
+    # Auto-scroll to bottom using a custom component
+    # This ensures the latest message is visible
+    if conversation.messages:
+        st.components.v1.html(
+            """
+            <script>
+                // Wait for the page to fully load, then scroll to bottom
+                window.addEventListener('load', function() {
+                    window.parent.document.querySelector('section.main').scrollTo({
+                        top: window.parent.document.querySelector('section.main').scrollHeight,
+                        behavior: 'smooth'
+                    });
+                });
+                // Also scroll immediately
+                setTimeout(function() {
+                    window.parent.document.querySelector('section.main').scrollTo({
+                        top: window.parent.document.querySelector('section.main').scrollHeight,
+                        behavior: 'smooth'
+                    });
+                }, 100);
+            </script>
+            """,
+            height=0
+        )
 
 
 def render_export_button(conversation: Optional[ConversationState]) -> None:
@@ -189,7 +225,11 @@ def handle_conversation_loop(conversation: ConversationState) -> None:
 
         try:
             # Generate response
-            for chunk in generate_response(agent_model, conversation.get_messages_for_model()):
+            for chunk in generate_response(
+                agent_model, 
+                conversation.get_messages_for_model(),
+                conversation.system_prompt
+            ):
                 if not conversation.is_running:
                     logging.info("Conversation stopped during generation")
                     break
@@ -269,7 +309,7 @@ def main() -> None:
     conversation = st.session_state.conversation
 
     # Render controls
-    agent1_model, agent2_model, topic, turn_limit = render_conversation_controls(
+    agent1_model, agent2_model, topic, turn_limit, system_prompt = render_conversation_controls(
         models,
         is_running=conversation is not None and conversation.is_running,
         has_conversation=conversation is not None
@@ -278,6 +318,7 @@ def main() -> None:
     # Update session state
     st.session_state.agent1_model = agent1_model
     st.session_state.agent2_model = agent2_model
+    st.session_state.system_prompt = system_prompt
 
     # Validate inputs
     validation_error = validate_inputs(agent1_model, agent2_model, topic)
@@ -294,7 +335,8 @@ def main() -> None:
             agent1_model=agent1_model,
             agent2_model=agent2_model,
             topic=topic,
-            turn_limit_minutes=turn_limit
+            turn_limit_minutes=turn_limit,
+            system_prompt=system_prompt
         )
         st.session_state.conversation.start_conversation()
         st.rerun()

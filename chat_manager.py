@@ -40,6 +40,7 @@ class ConversationState:
     agent2_model: str
     topic: str
     turn_limit_minutes: int
+    system_prompt: str = ""
     messages: List[Message] = field(default_factory=list)
     is_running: bool = False
     start_time: Optional[datetime] = None
@@ -155,6 +156,7 @@ class ConversationState:
 **Agent 1 Model:** {self.agent1_model}
 **Agent 2 Model:** {self.agent2_model}
 **Turn Limit:** {self.turn_limit_minutes} minutes {"(unlimited)" if self.turn_limit_minutes == 0 else ""}
+**System Prompt:** {self.system_prompt}
 
 ---
 
