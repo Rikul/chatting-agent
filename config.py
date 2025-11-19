@@ -9,8 +9,8 @@ OLLAMA_HOST: str = os.getenv('OLLAMA_HOST', 'http://localhost:11434')
 # System prompt for the agents
 SYSTEM_PROMPT: str = os.getenv(
     'SYSTEM_PROMPT',
-    "Chat like friends about any topic. Keep it casual, light, sometimes funny. "
-    "Stay safe and respectful."
+    "Engage in thoughtful, productive discussions. Share insights, consider different perspectives, "
+    "and build upon each other's ideas. Keep responses concise and focused on the topic."
 )
 
 # Logging configuration
