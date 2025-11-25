@@ -19,7 +19,7 @@ LOG_LEVEL: str = os.getenv('LOG_LEVEL', 'INFO')
 LOG_FORMAT: str = '%(asctime)s - %(levelname)s - %(message)s'
 
 # Default values
-DEFAULT_TURN_LIMIT_MINUTES: int = 10
+DEFAULT_TURN_LIMIT_MINUTES: int = 5
 DEFAULT_TOPIC: str = ""
 
 

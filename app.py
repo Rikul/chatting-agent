@@ -72,18 +72,20 @@ def render_conversation_controls(
             key="agent2_selectbox"
         )
 
-    topic = st.text_input(
+    topic = st.text_area(
         "Enter a topic for the agents to discuss",
         disabled=is_running,
         placeholder="e.g., The benefits of artificial intelligence",
-        key="topic_input"
+        key="topic_input",
+        height=150
     )
+
 
     system_prompt = st.text_area(
         "System Prompt (instructions for the agents)",
         value=st.session_state.system_prompt,
         disabled=is_running,
-        height=100,
+        height=150,
         help="Customize how the agents should behave in the conversation.",
         key="system_prompt_input"
     )
@@ -273,12 +275,12 @@ def handle_conversation_loop(conversation: ConversationState) -> None:
 def main() -> None:
     """Main application entry point."""
     st.set_page_config(
-        page_title="Auto-pilot Chatting Agents",
+        page_title="Chatting Agents",
         page_icon="🤖",
         layout="wide"
     )
 
-    st.title("🤖 Auto-pilot Chatting Agents")
+    st.title("🤖 Chatting Agents")
 
     # Fetch available models
     try:

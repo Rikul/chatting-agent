@@ -47,6 +47,10 @@ class ConversationState:
     finish_time: Optional[datetime] = None
     current_agent: int = 1  # 1 or 2
 
+    def get_agent_model(self, agent_number: int) -> str:
+        """Get the model name for the specified agent number."""
+        return self.agent1_model if agent_number == 1 else self.agent2_model
+    
     def start_conversation(self) -> None:
         """Start the conversation with the initial topic message."""
         self.is_running = True
@@ -55,7 +59,7 @@ class ConversationState:
         self.current_agent = 1
         self.messages = [
             Message(
-                agent_name="Agent 1",
+                agent_name=self.get_agent_model(self.current_agent),
                 content=self.topic,
                 timestamp=datetime.now()
             )
@@ -70,7 +74,7 @@ class ConversationState:
         """Add a message from the current agent."""
         agent_name = f"Agent {self.current_agent}"
         message = Message(
-            agent_name=agent_name,
+            agent_name=self.get_agent_model(self.current_agent),
             content=content,
             timestamp=datetime.now()
         )

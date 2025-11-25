@@ -1,4 +1,4 @@
-# Auto-pilot Chatting Agents
+# Chatting Agents
 
 A Streamlit application that facilitates autonomous conversations between two independently running Ollama language models, creating an automated agent-to-agent chat experience.
 
