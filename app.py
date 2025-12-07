@@ -26,6 +26,7 @@ def initialize_session_state(models: list[str]) -> None:
         st.session_state.agent2_model = agent2_default
         st.session_state.agent1_system_prompt = SYSTEM_PROMPT
         st.session_state.agent2_system_prompt = SYSTEM_PROMPT
+        st.session_state.streaming_container = None
 
 
 def validate_inputs(agent1: str, agent2: str, topic: str) -> Optional[str]:
@@ -184,6 +185,14 @@ def render_messages(conversation: Optional[ConversationState]) -> None:
         message_container.markdown(f"**{message.agent_name}** ({timestamp})")
         message_container.markdown(message.content)
     
+    # If conversation is running, create a container for the next message
+    if conversation.is_running:
+        agent_name, agent_model = conversation.get_next_agent_info()
+        streamlit_role = "user" if agent_name == "Agent 1" else "assistant"
+        avatar = "🤖" if agent_name == "Agent 1" else "🦾"
+        
+        # Create and store the container for the streaming message
+        st.session_state.streaming_container = st.chat_message(streamlit_role, avatar=avatar)
 
 def render_export_button(conversation: Optional[ConversationState]) -> None:
     """Render the chat export button."""
@@ -211,12 +220,14 @@ def handle_conversation_loop(conversation: ConversationState) -> None:
     agent_name, agent_model = conversation.get_next_agent_info()
     #logging.info("Next agent to respond: %s, Model: %s", agent_name, agent_model)
 
-    # Determine Streamlit role and avatar for the agent
-    streamlit_role = "user" if agent_name == "Agent 1" else "assistant"
-    avatar = "🤖" if agent_name == "Agent 1" else "🦾"
-
-    # Display the agent's response in real-time using the container
-    chat_container = st.chat_message(streamlit_role, avatar=avatar)
+    # Use the container created in render_messages
+    if st.session_state.streaming_container is None:
+        st.error("Streaming container not initialized")
+        conversation.stop_conversation()
+        st.rerun()
+        return
+    
+    chat_container = st.session_state.streaming_container
     message_placeholder = chat_container.empty()
     timestamp_placeholder = chat_container.empty()
 
