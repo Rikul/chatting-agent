@@ -239,6 +239,7 @@ def handle_conversation_loop(conversation: ConversationState) -> None:
     if st.session_state.streaming_container is None:
         logging.error("Streaming container is None when conversation is running")
         conversation.stop_conversation()
+        st.session_state.streaming_container = None
         st.rerun()
         return
     
