@@ -45,6 +45,21 @@ def validate_inputs(agent1: str, agent2: str, topic: str) -> Optional[str]:
     return None
 
 
+def get_agent_role_and_avatar(agent_name: str) -> tuple[str, str]:
+    """
+    Get the Streamlit role and avatar for an agent.
+    
+    Args:
+        agent_name: Name of the agent ("Agent 1" or "Agent 2")
+        
+    Returns:
+        Tuple of (streamlit_role, avatar)
+    """
+    streamlit_role = "user" if agent_name == "Agent 1" else "assistant"
+    avatar = "🤖" if agent_name == "Agent 1" else "🦾"
+    return streamlit_role, avatar
+
+
 def render_conversation_controls(
     models: list[str],
     is_running: bool,
@@ -188,8 +203,7 @@ def render_messages(conversation: Optional[ConversationState]) -> None:
     # If conversation is running, create a container for the next message
     if conversation.is_running:
         agent_name, agent_model = conversation.get_next_agent_info()
-        streamlit_role = "user" if agent_name == "Agent 1" else "assistant"
-        avatar = "🤖" if agent_name == "Agent 1" else "🦾"
+        streamlit_role, avatar = get_agent_role_and_avatar(agent_name)
         
         # Create and store the container for the streaming message
         st.session_state.streaming_container = st.chat_message(streamlit_role, avatar=avatar)
@@ -221,13 +235,6 @@ def handle_conversation_loop(conversation: ConversationState) -> None:
     #logging.info("Next agent to respond: %s, Model: %s", agent_name, agent_model)
 
     # Use the container created in render_messages
-    if st.session_state.streaming_container is None:
-        # Fallback: create the container if it wasn't created by render_messages
-        # This handles edge cases where handle_conversation_loop is called before render_messages
-        streamlit_role = "user" if agent_name == "Agent 1" else "assistant"
-        avatar = "🤖" if agent_name == "Agent 1" else "🦾"
-        st.session_state.streaming_container = st.chat_message(streamlit_role, avatar=avatar)
-    
     chat_container = st.session_state.streaming_container
     message_placeholder = chat_container.empty()
     timestamp_placeholder = chat_container.empty()
