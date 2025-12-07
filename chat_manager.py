@@ -87,6 +87,8 @@ class ConversationState:
         self.is_running = True
         self.time_expired = False
         self.finish_time = None
+        # Disable time limit after continuing - conversation becomes unlimited
+        self.turn_limit_minutes = 0
 
     def add_message(self, content: str) -> None:
         """Add a message from the current agent."""
