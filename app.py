@@ -235,6 +235,13 @@ def handle_conversation_loop(conversation: ConversationState) -> None:
     #logging.info("Next agent to respond: %s, Model: %s", agent_name, agent_model)
 
     # Use the container created in render_messages
+    # Safety check: if container is None, the conversation state may be inconsistent
+    if st.session_state.streaming_container is None:
+        logging.error("Streaming container is None when conversation is running")
+        conversation.stop_conversation()
+        st.rerun()
+        return
+    
     chat_container = st.session_state.streaming_container
     message_placeholder = chat_container.empty()
     timestamp_placeholder = chat_container.empty()
