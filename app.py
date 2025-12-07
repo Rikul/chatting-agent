@@ -3,6 +3,7 @@ import streamlit as st
 from datetime import datetime
 import logging
 from typing import Optional
+import time
 
 from config import configure_logging, DEFAULT_TURN_LIMIT_MINUTES, SYSTEM_PROMPT
 from ollama_client import get_models, generate_response, OllamaClientError
@@ -161,31 +162,6 @@ def render_messages(conversation: Optional[ConversationState]) -> None:
             st.markdown(f"**{message.agent_name}** ({timestamp})")
             st.markdown(message.content)
     
-    # Auto-scroll to bottom using a custom component
-    # This ensures the latest message is visible
-    if conversation.messages:
-        st.components.v1.html(
-            """
-            <script>
-                // Wait for the page to fully load, then scroll to bottom
-                window.addEventListener('load', function() {
-                    window.parent.document.querySelector('section.main').scrollTo({
-                        top: window.parent.document.querySelector('section.main').scrollHeight,
-                        behavior: 'smooth'
-                    });
-                });
-                // Also scroll immediately
-                setTimeout(function() {
-                    window.parent.document.querySelector('section.main').scrollTo({
-                        top: window.parent.document.querySelector('section.main').scrollHeight,
-                        behavior: 'smooth'
-                    });
-                }, 100);
-            </script>
-            """,
-            height=0
-        )
-
 
 def render_export_button(conversation: Optional[ConversationState]) -> None:
     """Render the chat export button."""
@@ -277,11 +253,12 @@ def main() -> None:
     st.set_page_config(
         page_title="Chatting Agents",
         page_icon="🤖",
-        layout="wide"
+        layout="wide",
+        initial_sidebar_state="collapsed"
     )
 
     st.title("🤖 Chatting Agents")
-
+    
     # Fetch available models
     try:
         models = get_models()
