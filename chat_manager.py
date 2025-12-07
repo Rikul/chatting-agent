@@ -75,6 +75,7 @@ class ConversationState:
         """Stop the conversation."""
         self.is_running = False
         self.finish_time = datetime.now()
+        self.time_expired = False  # Reset time_expired flag
 
     def pause_for_time_limit(self) -> None:
         """Pause the conversation when time limit is reached."""

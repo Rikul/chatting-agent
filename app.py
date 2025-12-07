@@ -137,6 +137,7 @@ def render_action_buttons(
             not topic or
             not topic.strip() or
             is_running or
+            time_expired or
             validation_error is not None
         )
         start_clicked = st.button(
@@ -149,7 +150,7 @@ def render_action_buttons(
     with col2:
         stop_clicked = st.button(
             "Stop",
-            disabled=not is_running,
+            disabled=not (is_running or time_expired),
             use_container_width=True
         )
 
