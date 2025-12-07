@@ -119,17 +119,18 @@ def render_action_buttons(
     conversation: Optional[ConversationState],
     topic: str,
     validation_error: Optional[str]
-) -> tuple[bool, bool]:
+) -> tuple[bool, bool, bool]:
     """
-    Render Start and Stop buttons.
+    Render Start, Stop, and Continue buttons.
 
     Returns:
-        Tuple of (start_clicked, stop_clicked)
+        Tuple of (start_clicked, stop_clicked, continue_clicked)
     """
     is_running = conversation is not None and conversation.is_running
     has_messages = conversation is not None and len(conversation.messages) > 0
+    time_expired = conversation is not None and conversation.time_expired
 
-    col1, col2, col3 = st.columns([1, 1, 2])
+    col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
 
     with col1:
         start_disabled = (
@@ -153,12 +154,20 @@ def render_action_buttons(
         )
 
     with col3:
+        continue_clicked = st.button(
+            "Continue",
+            disabled=not time_expired,
+            type="primary" if time_expired else "secondary",
+            use_container_width=True
+        )
+
+    with col4:
         if conversation and conversation.start_time:
             elapsed_time = conversation.get_elapsed_time_str()
             limit_str = f"{conversation.turn_limit_minutes}m" if conversation.turn_limit_minutes > 0 else "∞"
             st.info(f"⏱️ Elapsed: {elapsed_time} / {limit_str}")
 
-    return start_clicked, stop_clicked
+    return start_clicked, stop_clicked, continue_clicked
 
 
 def render_messages(conversation: Optional[ConversationState]) -> None:
@@ -194,8 +203,7 @@ def handle_conversation_loop(conversation: ConversationState) -> None:
     """Handle the main conversation loop."""
     # Check time limit
     if conversation.is_time_limit_reached():
-        conversation.stop_conversation()
-        st.warning("⏰ Time limit reached. Conversation stopped.")
+        conversation.pause_for_time_limit()
         st.rerun()
 
     # Get the next agent to respond (we switch after getting the response)
@@ -323,7 +331,11 @@ def main() -> None:
         st.warning(f"⚠️ {validation_error}")
 
     # Render action buttons
-    start_clicked, stop_clicked = render_action_buttons(conversation, topic, validation_error)
+    start_clicked, stop_clicked, continue_clicked = render_action_buttons(conversation, topic, validation_error)
+
+    # Show time expired warning
+    if conversation and conversation.time_expired:
+        st.warning("⏰ Time limit reached. Click 'Continue' to keep the conversation going.")
 
     # Handle button clicks
     if start_clicked and not validation_error:
@@ -342,6 +354,11 @@ def main() -> None:
     if stop_clicked and conversation:
         #logging.info("Stopping conversation")
         conversation.stop_conversation()
+        st.rerun()
+
+    if continue_clicked and conversation:
+        #logging.info("Continuing conversation after time limit")
+        conversation.continue_conversation()
         st.rerun()
 
     st.divider()
