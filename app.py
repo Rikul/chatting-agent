@@ -24,7 +24,8 @@ def initialize_session_state(models: list[str]) -> None:
         st.session_state.conversation = None
         st.session_state.agent1_model = agent1_default
         st.session_state.agent2_model = agent2_default
-        st.session_state.system_prompt = SYSTEM_PROMPT
+        st.session_state.agent1_system_prompt = SYSTEM_PROMPT
+        st.session_state.agent2_system_prompt = SYSTEM_PROMPT
 
 
 def validate_inputs(agent1: str, agent2: str, topic: str) -> Optional[str]:
@@ -47,12 +48,12 @@ def render_conversation_controls(
     models: list[str],
     is_running: bool,
     has_conversation: bool
-) -> tuple[str, str, str, int, str]:
+) -> tuple[str, str, str, int, str, str]:
     """
     Render the conversation control UI elements.
 
     Returns:
-        Tuple of (agent1_model, agent2_model, topic, turn_limit, system_prompt)
+        Tuple of (agent1_model, agent2_model, topic, turn_limit, agent1_system_prompt, agent2_system_prompt)
     """
     col1, col2 = st.columns(2)
     with col1:
@@ -81,15 +82,26 @@ def render_conversation_controls(
         height=150
     )
 
+    col1, col2 = st.columns(2)
+    with col1:
+        agent1_system_prompt = st.text_area(
+            "Agent 1 System Prompt",
+            value=st.session_state.agent1_system_prompt,
+            disabled=is_running,
+            height=150,
+            help="Customize how Agent 1 should behave in the conversation.",
+            key="agent1_system_prompt_input"
+        )
 
-    system_prompt = st.text_area(
-        "System Prompt (instructions for the agents)",
-        value=st.session_state.system_prompt,
-        disabled=is_running,
-        height=150,
-        help="Customize how the agents should behave in the conversation.",
-        key="system_prompt_input"
-    )
+    with col2:
+        agent2_system_prompt = st.text_area(
+            "Agent 2 System Prompt",
+            value=st.session_state.agent2_system_prompt,
+            disabled=is_running,
+            height=150,
+            help="Customize how Agent 2 should behave in the conversation.",
+            key="agent2_system_prompt_input"
+        )
 
     turn_limit = st.number_input(
         "Time limit in minutes (0 for unlimited)",
@@ -100,7 +112,7 @@ def render_conversation_controls(
         key="turn_limit_input"
     )
 
-    return agent1_selection, agent2_selection, topic, turn_limit, system_prompt
+    return agent1_selection, agent2_selection, topic, turn_limit, agent1_system_prompt, agent2_system_prompt
 
 
 def render_action_buttons(
@@ -188,7 +200,7 @@ def handle_conversation_loop(conversation: ConversationState) -> None:
 
     # Get the next agent to respond (we switch after getting the response)
     agent_name, agent_model = conversation.get_next_agent_info()
-    logging.info("Next agent to respond: %s, Model: %s", agent_name, agent_model)
+    #logging.info("Next agent to respond: %s, Model: %s", agent_name, agent_model)
 
     # Determine Streamlit role and avatar for the agent
     streamlit_role = "user" if agent_name == "Agent 1" else "assistant"
@@ -202,14 +214,19 @@ def handle_conversation_loop(conversation: ConversationState) -> None:
         full_response = ""
 
         try:
+            # Get the system prompt for the current agent
+            agent_number = 1 if agent_name == "Agent 1" else 2
+            system_prompt = conversation.get_agent_system_prompt(agent_number)
+            
             # Generate response
             for chunk in generate_response(
                 agent_model, 
                 conversation.get_messages_for_model(),
-                conversation.system_prompt
+                system_prompt
             ):
+            
                 if not conversation.is_running:
-                    logging.info("Conversation stopped during generation")
+                    #logging.info("Conversation stopped during generation")
                     break
 
                 full_response += chunk
@@ -288,7 +305,7 @@ def main() -> None:
     conversation = st.session_state.conversation
 
     # Render controls
-    agent1_model, agent2_model, topic, turn_limit, system_prompt = render_conversation_controls(
+    agent1_model, agent2_model, topic, turn_limit, agent1_system_prompt, agent2_system_prompt = render_conversation_controls(
         models,
         is_running=conversation is not None and conversation.is_running,
         has_conversation=conversation is not None
@@ -297,7 +314,8 @@ def main() -> None:
     # Update session state
     st.session_state.agent1_model = agent1_model
     st.session_state.agent2_model = agent2_model
-    st.session_state.system_prompt = system_prompt
+    st.session_state.agent1_system_prompt = agent1_system_prompt
+    st.session_state.agent2_system_prompt = agent2_system_prompt
 
     # Validate inputs
     validation_error = validate_inputs(agent1_model, agent2_model, topic)
@@ -309,19 +327,20 @@ def main() -> None:
 
     # Handle button clicks
     if start_clicked and not validation_error:
-        logging.info("Starting new conversation on topic: %s", topic)
+        #logging.info("Starting new conversation on topic: %s", topic)
         st.session_state.conversation = ConversationState(
             agent1_model=agent1_model,
             agent2_model=agent2_model,
             topic=topic,
             turn_limit_minutes=turn_limit,
-            system_prompt=system_prompt
+            agent1_system_prompt=agent1_system_prompt,
+            agent2_system_prompt=agent2_system_prompt
         )
         st.session_state.conversation.start_conversation()
         st.rerun()
 
     if stop_clicked and conversation:
-        logging.info("Stopping conversation")
+        #logging.info("Stopping conversation")
         conversation.stop_conversation()
         st.rerun()
 

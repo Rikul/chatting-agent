@@ -24,7 +24,7 @@ def get_models() -> List[str]:
         OllamaClientError: If unable to connect to Ollama or fetch models.
     """
     try:
-        logging.info("Attempting to connect to Ollama at %s", OLLAMA_HOST)
+        #logging.info("Attempting to connect to Ollama at %s", OLLAMA_HOST)
         response = requests.get(f"{OLLAMA_HOST}/api/tags", timeout=10)
         response.raise_for_status()
 
@@ -32,11 +32,11 @@ def get_models() -> List[str]:
 
         # Return empty list if no models are installed (let the UI handle this gracefully)
         if "models" not in models_data or not models_data["models"]:
-            logging.warning("Connected to Ollama but no models found")
+            #logging.warning("Connected to Ollama but no models found")
             return []
 
         models = [m['name'] for m in models_data["models"]]
-        logging.info("Successfully connected to Ollama. Found %d models.", len(models))
+        #logging.info("Successfully connected to Ollama. Found %d models.", len(models))
         return models
 
     except requests.exceptions.RequestException as e:
@@ -73,7 +73,7 @@ def generate_response(
         role = "user" if i == len(messages) - 1 else "assistant"
         model_messages.append({"role": role, "content": msg["content"]})
 
-    logging.info("Sending prompt to %s with %d messages", model, len(model_messages))
+    #logging.info("Sending prompt to %s with %d messages", model, len(model_messages))
 
     payload = {
         "model": model,

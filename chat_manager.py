@@ -40,7 +40,8 @@ class ConversationState:
     agent2_model: str
     topic: str
     turn_limit_minutes: int
-    system_prompt: str = ""
+    agent1_system_prompt: str = ""
+    agent2_system_prompt: str = ""
     messages: List[Message] = field(default_factory=list)
     is_running: bool = False
     start_time: Optional[datetime] = None
@@ -50,6 +51,10 @@ class ConversationState:
     def get_agent_model(self, agent_number: int) -> str:
         """Get the model name for the specified agent number."""
         return self.agent1_model if agent_number == 1 else self.agent2_model
+    
+    def get_agent_system_prompt(self, agent_number: int) -> str:
+        """Get the system prompt for the specified agent number."""
+        return self.agent1_system_prompt if agent_number == 1 else self.agent2_system_prompt
     
     def start_conversation(self) -> None:
         """Start the conversation with the initial topic message."""
@@ -158,9 +163,12 @@ class ConversationState:
 **Duration:** {self.get_duration_str()}
 
 **Agent 1 Model:** {self.agent1_model}
+**Agent 1 System Prompt:** {self.agent1_system_prompt}
+
 **Agent 2 Model:** {self.agent2_model}
+**Agent 2 System Prompt:** {self.agent2_system_prompt}
+
 **Turn Limit:** {self.turn_limit_minutes} minutes {"(unlimited)" if self.turn_limit_minutes == 0 else ""}
-**System Prompt:** {self.system_prompt}
 
 ---
 
