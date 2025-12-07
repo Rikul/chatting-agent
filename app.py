@@ -26,6 +26,7 @@ def initialize_session_state(models: list[str]) -> None:
         st.session_state.agent2_model = agent2_default
         st.session_state.agent1_system_prompt = SYSTEM_PROMPT
         st.session_state.agent2_system_prompt = SYSTEM_PROMPT
+        st.session_state.streaming_container = None
 
 
 def validate_inputs(agent1: str, agent2: str, topic: str) -> Optional[str]:
@@ -42,6 +43,21 @@ def validate_inputs(agent1: str, agent2: str, topic: str) -> Optional[str]:
         return "Please select different models for Agent 1 and Agent 2 to make the conversation more interesting."
 
     return None
+
+
+def get_agent_role_and_avatar(agent_name: str) -> tuple[str, str]:
+    """
+    Get the Streamlit role and avatar for an agent.
+    
+    Args:
+        agent_name: Name of the agent ("Agent 1" or "Agent 2")
+        
+    Returns:
+        Tuple of (streamlit_role, avatar)
+    """
+    streamlit_role = "user" if agent_name == "Agent 1" else "assistant"
+    avatar = "🤖" if agent_name == "Agent 1" else "🦾"
+    return streamlit_role, avatar
 
 
 def render_conversation_controls(
@@ -177,13 +193,20 @@ def render_messages(conversation: Optional[ConversationState]) -> None:
         st.info("👋 Select models and enter a topic, then click 'Start' to begin the conversation.")
         return
 
-    # Render all messages
+    # Render all messages using the container returned by st.chat_message
     for message in conversation.messages:
-        with st.chat_message(message.get_streamlit_role(), avatar=message.get_avatar()):
-            timestamp = message.timestamp.strftime("%H:%M:%S")
-            st.markdown(f"**{message.agent_name}** ({timestamp})")
-            st.markdown(message.content)
+        message_container = st.chat_message(message.get_streamlit_role(), avatar=message.get_avatar())
+        timestamp = message.timestamp.strftime("%H:%M:%S")
+        message_container.markdown(f"**{message.agent_name}** ({timestamp})")
+        message_container.markdown(message.content)
     
+    # If conversation is running, create a container for the next message
+    if conversation.is_running:
+        agent_name, agent_model = conversation.get_next_agent_info()
+        streamlit_role, avatar = get_agent_role_and_avatar(agent_name)
+        
+        # Create and store the container for the streaming message
+        st.session_state.streaming_container = st.chat_message(streamlit_role, avatar=avatar)
 
 def render_export_button(conversation: Optional[ConversationState]) -> None:
     """Render the chat export button."""
@@ -211,67 +234,71 @@ def handle_conversation_loop(conversation: ConversationState) -> None:
     agent_name, agent_model = conversation.get_next_agent_info()
     #logging.info("Next agent to respond: %s, Model: %s", agent_name, agent_model)
 
-    # Determine Streamlit role and avatar for the agent
-    streamlit_role = "user" if agent_name == "Agent 1" else "assistant"
-    avatar = "🤖" if agent_name == "Agent 1" else "🦾"
+    # Use the container created in render_messages
+    # Safety check: if container is None, the conversation state may be inconsistent
+    if st.session_state.streaming_container is None:
+        logging.error("Streaming container is None when conversation is running")
+        conversation.stop_conversation()
+        st.session_state.streaming_container = None
+        st.rerun()
+        return
+    
+    chat_container = st.session_state.streaming_container
+    message_placeholder = chat_container.empty()
+    timestamp_placeholder = chat_container.empty()
 
-    # Display the agent's response in real-time
-    with st.chat_message(streamlit_role, avatar=avatar):
-        message_placeholder = st.empty()
-        timestamp_placeholder = st.empty()
+    full_response = ""
 
-        full_response = ""
+    try:
+        # Get the system prompt for the current agent
+        agent_number = 1 if agent_name == "Agent 1" else 2
+        system_prompt = conversation.get_agent_system_prompt(agent_number)
+        
+        # Generate response
+        for chunk in generate_response(
+            agent_model, 
+            conversation.get_messages_for_model(),
+            system_prompt
+        ):
+        
+            if not conversation.is_running:
+                #logging.info("Conversation stopped during generation")
+                break
 
-        try:
-            # Get the system prompt for the current agent
-            agent_number = 1 if agent_name == "Agent 1" else 2
-            system_prompt = conversation.get_agent_system_prompt(agent_number)
-            
-            # Generate response
-            for chunk in generate_response(
-                agent_model, 
-                conversation.get_messages_for_model(),
-                system_prompt
-            ):
-            
-                if not conversation.is_running:
-                    #logging.info("Conversation stopped during generation")
-                    break
+            full_response += chunk
+            message_placeholder.markdown(full_response + "▌")
 
-                full_response += chunk
-                message_placeholder.markdown(full_response + "▌")
+        # Final display without cursor
+        message_placeholder.markdown(full_response)
 
-            # Final display without cursor
-            message_placeholder.markdown(full_response)
-
-            # Validate response
-            if not full_response or not full_response.strip():
-                st.error(
-                    f"❌ {agent_name} ({agent_model}) failed to generate a response. "
-                    "The conversation has been stopped."
-                )
-                logging.warning("Model %s returned an empty response.", agent_model)
-                conversation.stop_conversation()
-                st.rerun()
-                return
-
-            # Only add message if still running
-            if conversation.is_running:
-                # Switch to the agent that just responded
-                conversation.switch_agent()
-                # Add the message
-                conversation.add_message(full_response)
-
-                # Display timestamp
-                timestamp = conversation.messages[-1].timestamp.strftime("%H:%M:%S")
-                timestamp_placeholder.markdown(f"**{agent_name}** ({timestamp})")
-
-                st.rerun()
-
-        except OllamaClientError as e:
-            st.error(f"❌ Error: {e}")
+        # Validate response
+        if not full_response or not full_response.strip():
+            st.error(
+                f"❌ {agent_name} ({agent_model}) failed to generate a response. "
+                "The conversation has been stopped."
+            )
+            logging.warning("Model %s returned an empty response.", agent_model)
             conversation.stop_conversation()
             st.rerun()
+            return
+
+        # Only add message if still running
+        if conversation.is_running:
+            # Switch to the agent that just responded
+            conversation.switch_agent()
+            # Add the message
+            conversation.add_message(full_response)
+
+            # Display timestamp
+            timestamp = conversation.messages[-1].timestamp.strftime("%H:%M:%S")
+            timestamp_placeholder.markdown(f"**{agent_name}** ({timestamp})")
+
+            st.rerun()
+
+    except OllamaClientError as e:
+        st.error(f"❌ Error: {e}")
+        conversation.stop_conversation()
+        st.rerun()
 
 
 def main() -> None:
@@ -355,6 +382,7 @@ def main() -> None:
     if stop_clicked and conversation:
         #logging.info("Stopping conversation")
         conversation.stop_conversation()
+        st.session_state.streaming_container = None
         st.rerun()
 
     if continue_clicked and conversation:
