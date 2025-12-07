@@ -47,6 +47,7 @@ class ConversationState:
     start_time: Optional[datetime] = None
     finish_time: Optional[datetime] = None
     current_agent: int = 1  # 1 or 2
+    time_expired: bool = False  # Track if time limit was reached
 
     def get_agent_model(self, agent_number: int) -> str:
         """Get the model name for the specified agent number."""
@@ -74,6 +75,20 @@ class ConversationState:
         """Stop the conversation."""
         self.is_running = False
         self.finish_time = datetime.now()
+        self.time_expired = False  # Reset time_expired flag
+
+    def pause_for_time_limit(self) -> None:
+        """Pause the conversation when time limit is reached."""
+        self.is_running = False
+        self.time_expired = True
+
+    def continue_conversation(self) -> None:
+        """Continue the conversation after time limit was reached."""
+        self.is_running = True
+        self.time_expired = False
+        self.finish_time = None
+        # Disable time limit after continuing - conversation becomes unlimited
+        self.turn_limit_minutes = 0
 
     def add_message(self, content: str) -> None:
         """Add a message from the current agent."""
